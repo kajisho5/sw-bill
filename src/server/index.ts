@@ -7,15 +7,13 @@ import { fileName, todayJst } from "../shared/format";
 import { pageCount, renderHtml } from "../shared/render";
 import { DOC_KINDS, type DocKind, type Draft } from "../shared/types";
 import { sanitizeDraft, sanitizeItems } from "./drafts";
-import { AppError, getDoc, getPartner, getRaw, issuerProfile, listDocs, saveDoc, searchPartners, vault, type Env } from "./freee";
+import { AppError, appSecrets, endpoints, tokenUrl, getDoc, getPartner, getRaw, issuerProfile, listDocs, saveDoc, searchPartners, vault, type Env } from "./freee";
 import { handleMcp } from "./mcp";
 import { htmlToPdf } from "./pdf";
 import { makeSession, randomId, readSession, safeEqual, SESSION_DAYS } from "./session";
-import { TOKEN_URL } from "./vault";
 
 export { Vault } from "./vault";
 
-const AUTHORIZE_URL = "https://accounts.secure.freee.co.jp/public_api/authorize";
 
 type Ctx = Context<{ Bindings: Env }>;
 const app = new Hono<{ Bindings: Env }>();
@@ -30,8 +28,9 @@ const idOf = (c: Ctx): number => {
   if (!Number.isSafeInteger(n) || n <= 0) throw new AppError(400, "bad_id", "書類の番号が正しくありません。");
   return n;
 };
-const configured = (env: Env) => !!(env.FREEE_CLIENT_ID && env.FREEE_CLIENT_SECRET && env.SESSION_SECRET && env.SESSION_SECRET.length >= 32);
-const cookieOpts = (maxAge: number) => ({ httpOnly: true, secure: true, sameSite: "Lax" as const, path: "/", maxAge });
+const configured = (env: Env) => !!(env.FREEE_CLIENT_ID && env.FREEE_CLIENT_SECRET);
+const cookieOpts = (maxAge: number, secure = true) => ({ httpOnly: true, secure, sameSite: "Lax" as const, path: "/", maxAge });
+const isHttps = (c: Ctx) => new URL(c.req.url).protocol === "https:";
 const htmlHeaders = {
   "content-type": "text/html; charset=utf-8",
   "cache-control": "no-store",
@@ -47,10 +46,10 @@ app.onError((e, c) => {
 
 // ───────── ログイン ─────────
 app.get("/auth/login", async (c) => {
-  if (!configured(c.env)) return c.text("まだ設定が終わっていません（freee のアプリ登録と秘密の値）。README を見てください。", 503);
+  if (!configured(c.env)) return c.text("まだ設定が終わっていません（freee のアプリ登録）。README を見てください。", 503);
   const state = randomId(18);
-  setCookie(c, "st", await makeSession(c.env.SESSION_SECRET, "st", 600, state), cookieOpts(600));
-  const u = new URL(AUTHORIZE_URL);
+  setCookie(c, "st", await makeSession((await appSecrets(c.env)).session, "st", 600, state), cookieOpts(600, isHttps(c)));
+  const u = new URL(`${endpoints(c.env).accounts}/public_api/authorize`);
   u.search = new URLSearchParams({
     response_type: "code",
     client_id: c.env.FREEE_CLIENT_ID,
@@ -64,7 +63,8 @@ app.get("/auth/login", async (c) => {
 app.get("/auth/callback", async (c) => {
   const fail = (reason: string) => c.redirect(`/?login_error=${encodeURIComponent(reason)}`);
   if (!configured(c.env)) return fail("setup");
-  const expected = await readSession(c.env.SESSION_SECRET, "st", getCookie(c, "st"));
+  const secret = (await appSecrets(c.env)).session;
+  const expected = await readSession(secret, "st", getCookie(c, "st"));
   deleteCookie(c, "st", { path: "/" });
   const state = c.req.query("state") ?? "";
   const code = c.req.query("code") ?? "";
@@ -72,7 +72,7 @@ app.get("/auth/callback", async (c) => {
   if (!code) return fail("denied");
   let tok: { access_token?: string; refresh_token?: string; expires_in?: number };
   try {
-    const res = await fetch(TOKEN_URL, {
+    const res = await fetch(tokenUrl(c.env), {
       method: "POST",
       headers: { "content-type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
@@ -92,7 +92,7 @@ app.get("/auth/callback", async (c) => {
   if (!tok.access_token || !tok.refresh_token) return fail("token");
   // SEVENTHWELL の事業所に入れる人だけを通す。
   try {
-    const res = await fetch("https://api.freee.co.jp/api/1/companies", {
+    const res = await fetch(`${endpoints(c.env).api}/api/1/companies`, {
       headers: { authorization: `Bearer ${tok.access_token}` },
       signal: AbortSignal.timeout(15000),
     });
@@ -102,7 +102,7 @@ app.get("/auth/callback", async (c) => {
     return fail("network");
   }
   await vault(c.env).setTokens({ access: tok.access_token, refresh: tok.refresh_token, expiresAt: Date.now() + (tok.expires_in ?? 21600) * 1000 });
-  setCookie(c, "s", await makeSession(c.env.SESSION_SECRET, "s", SESSION_DAYS * 86400), cookieOpts(SESSION_DAYS * 86400));
+  setCookie(c, "s", await makeSession(secret, "s", SESSION_DAYS * 86400), cookieOpts(SESSION_DAYS * 86400, isHttps(c)));
   return c.redirect("/");
 });
 
@@ -113,16 +113,16 @@ app.post("/auth/logout", (c) => {
 
 // ───────── AI 用の入口 ─────────
 app.all("/mcp/:token", async (c) => {
-  const token = c.env.MCP_TOKEN ?? "";
-  if (token.length < 32 || !safeEqual(token, c.req.param("token"))) return c.json({ error: "not_found" }, 404);
+  const given = c.req.param("token");
+  if (given.length < 32 || !safeEqual((await appSecrets(c.env)).mcp, given)) return c.json({ error: "not_found" }, 404);
   if (c.req.method !== "POST") return c.body(null, 405, { allow: "POST" });
   return handleMcp(c.env, c.req.raw);
 });
 
 // ───────── ここから下はログインが要る ─────────
 app.use("/api/*", async (c, next) => {
-  if (!configured(c.env)) throw new AppError(503, "setup", "まだ設定が終わっていません（freee のアプリ登録と秘密の値）。");
-  if ((await readSession(c.env.SESSION_SECRET, "s", getCookie(c, "s"))) == null) throw new AppError(401, "login", "ログインしてください。");
+  if (!configured(c.env)) throw new AppError(503, "setup", "まだ設定が終わっていません（freee のアプリ登録）。");
+  if ((await readSession((await appSecrets(c.env)).session, "s", getCookie(c, "s"))) == null) throw new AppError(401, "login", "ログインしてください。");
   // 画面以外（別のサイトのフォームなど）からの書き込みを通さない。
   if (c.req.method !== "GET" && c.req.header("x-requested-with") !== "sw-bill") throw new AppError(403, "forbidden", "この操作は画面からだけできます。");
   await next();
@@ -165,8 +165,12 @@ app.get("/api/partners", async (c) => c.json({ partners: await searchPartners(c.
 // 掛率の表・単価表
 app.get("/api/settings", async (c) => {
   const v = vault(c.env);
-  const [rates, items] = await Promise.all([v.getRates(), v.getItems()]);
-  return c.json({ rates, items });
+  const [rates, items, sec] = await Promise.all([v.getRates(), v.getItems(), appSecrets(c.env)]);
+  return c.json({ rates, items, mcpUrl: `${new URL(c.req.url).origin}/mcp/${sec.mcp}` });
+});
+app.post("/api/mcp-token/rotate", async (c) => {
+  if (c.env.MCP_TOKEN && c.env.MCP_TOKEN.length >= 32) throw new AppError(409, "fixed", "合言葉が設定で固定されているので、ここからは作り直せません。");
+  return c.json({ mcpUrl: `${new URL(c.req.url).origin}/mcp/${await vault(c.env).rotateMcp()}` });
 });
 app.put("/api/rates", async (c) => {
   const body = await c.req.json().catch(() => null);

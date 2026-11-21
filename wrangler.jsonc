@@ -11,6 +11,9 @@
     "not_found_handling": "single-page-application",
     "run_worker_first": ["/api/*", "/auth/*", "/mcp/*"]
   },
+  // 公開先。DNS のレコードは tower（kajisho5/tower の projects/sw-bill.toml）が用意する。
+  "routes": [{ "pattern": "bill.seventh-well.com/*", "zone_name": "seventh-well.com" }],
+  "workers_dev": true,
   "browser": { "binding": "BROWSER" },
   "durable_objects": { "bindings": [{ "name": "VAULT", "class_name": "Vault" }] },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Vault"] }],

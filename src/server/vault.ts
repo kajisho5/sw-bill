@@ -11,8 +11,8 @@ export interface Tokens {
   expiresAt: number;
 }
 
-export const TOKEN_URL = "https://accounts.secure.freee.co.jp/public_api/token";
 const REFRESH_BEFORE_MS = 30 * 60 * 1000;
+const randomHex = (bytes: number) => [...crypto.getRandomValues(new Uint8Array(bytes))].map((b) => b.toString(16).padStart(2, "0")).join("");
 
 export type CommitGate = { state: "done"; freeeId: number } | { state: "busy" } | { state: "go" } | { state: "missing" };
 
@@ -28,16 +28,16 @@ export class Vault extends DurableObject {
   }
 
   /** 使える鍵を返す。期限が近ければ更新する。ログインし直しが必要なら null。 */
-  async accessToken(clientId: string, clientSecret: string): Promise<string | null> {
+  async accessToken(clientId: string, clientSecret: string, tokenUrl: string): Promise<string | null> {
     const t = await this.ctx.storage.get<Tokens>("tokens");
     if (!t) return null;
     if (t.expiresAt - Date.now() > REFRESH_BEFORE_MS) return t.access;
-    this.refreshing ??= this.refresh(t, clientId, clientSecret).finally(() => (this.refreshing = null));
+    this.refreshing ??= this.refresh(t, clientId, clientSecret, tokenUrl).finally(() => (this.refreshing = null));
     return this.refreshing;
   }
 
-  private async refresh(t: Tokens, clientId: string, clientSecret: string): Promise<string | null> {
-    const res = await fetch(TOKEN_URL, {
+  private async refresh(t: Tokens, clientId: string, clientSecret: string, tokenUrl: string): Promise<string | null> {
+    const res = await fetch(tokenUrl, {
       method: "POST",
       headers: { "content-type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
@@ -66,6 +66,24 @@ export class Vault extends DurableObject {
     return j.access_token;
   }
 
+  /** このツールの中だけで使う合言葉（ログインの印の署名用・AI 用の入口の URL 用）。無ければ作る。 */
+  async secrets(): Promise<{ session: string; mcp: string }> {
+    let s = await this.ctx.storage.get<{ session: string; mcp: string }>("secrets");
+    if (!s) {
+      s = { session: randomHex(32), mcp: randomHex(24) };
+      await this.ctx.storage.put("secrets", s);
+    }
+    return s;
+  }
+
+  /** AI 用の入口の合言葉を作り直す（古い URL は使えなくなる）。 */
+  async rotateMcp(): Promise<string> {
+    const s = await this.secrets();
+    const next = { ...s, mcp: randomHex(24) };
+    await this.ctx.storage.put("secrets", next);
+    return next.mcp;
+  }
+
   async getRates(): Promise<RateTable> {
     const r = await this.ctx.storage.get("rates");
     return isValidRateTable(r) ? r : DEFAULT_RATES;
@@ -83,9 +101,13 @@ export class Vault extends DurableObject {
     await this.ctx.storage.put("items", items);
   }
 
+  /** まだ freee に保存していない下書き。保存済みのものは二重保存を防ぐため7日だけ残し、そのあと片づける。 */
   async listDrafts(): Promise<Draft[]> {
     const m = await this.ctx.storage.list<Draft>({ prefix: "draft:" });
-    return [...m.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    const old = Date.now() - 7 * 86400_000;
+    const stale = [...m.values()].filter((d) => d.freeeId && Date.parse(d.updatedAt) < old).map((d) => `draft:${d.id}`);
+    if (stale.length) await this.ctx.storage.delete(stale.slice(0, 100));
+    return [...m.values()].filter((d) => !d.freeeId).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   }
 
   async getDraft(id: string): Promise<Draft | null> {

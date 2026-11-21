@@ -1,5 +1,7 @@
-# 手元で動かすときの見本。.dev.vars に写して値を入れる（.dev.vars はリポに入れない）。
-FREEE_CLIENT_ID=
-FREEE_CLIENT_SECRET=
-SESSION_SECRET=
-MCP_TOKEN=
+# 手元で動かすときの見本。.dev.vars に写して使う（.dev.vars はリポに入れない）。
+# 下の値は「偽物の freee」（npm run fake-freee）につなぐ試験用で、本物の値ではない。
+FREEE_CLIENT_ID=fake-client
+FREEE_CLIENT_SECRET=fake-secret
+COMPANY_ID=1
+DEV_FAKE_FREEE=1
+DEV_FREEE_BASE=http://localhost:8799

@@ -89,7 +89,7 @@ describe("入口の守り", () => {
     expect((await send("POST", "/api/drafts", {}, {})).status).toBe(403);
   });
   it("設定が終わっていなければ、そう伝える", async () => {
-    env.SESSION_SECRET = "";
+    env.FREEE_CLIENT_SECRET = "";
     expect((await get("/api/me")).status).toBe(503);
     expect((await app.request("https://bill.example/auth/login", {}, env)).status).toBe(503);
   });
@@ -240,8 +240,24 @@ describe("AI 用の入口", () => {
   const text = async (r: Response) => JSON.parse(((await r.json()) as any).result.content[0].text);
   it("合言葉が違えば、あることも教えない", async () => {
     expect((await mcp("tools/list", {}, "x".repeat(40))).status).toBe(404);
-    env.MCP_TOKEN = "";
-    expect((await mcp("tools/list", {}, "")).status).toBe(404);
+    expect((await mcp("tools/list", {}, "short")).status).toBe(404);
+  });
+  it("合言葉を設定に入れなければ自動で作られ、作り直すと古い URL は使えなくなる", async () => {
+    env.MCP_TOKEN = undefined;
+    const before: any = await (await get("/api/settings")).json();
+    const tok = before.mcpUrl.split("/mcp/")[1];
+    expect(tok).toMatch(/^[0-9a-f]{48}$/);
+    expect((await mcp("tools/list", {}, tok)).status).toBe(200);
+    const after: any = await (await send("POST", "/api/mcp-token/rotate")).json();
+    expect(after.mcpUrl).not.toBe(before.mcpUrl);
+    expect((await mcp("tools/list", {}, tok)).status).toBe(404);
+    expect((await mcp("tools/list", {}, after.mcpUrl.split("/mcp/")[1])).status).toBe(200);
+  });
+  it("署名用の合言葉も自動で作られ、別の合言葉で作った印は通らない", async () => {
+    env.SESSION_SECRET = undefined;
+    expect((await get("/api/me")).status).toBe(401);
+    const login = await app.request("https://bill.example/auth/login", {}, env);
+    expect(login.status).toBe(302);
   });
   it("道具の一覧に「freee に保存」は無い", async () => {
     const j: any = await (await mcp("tools/list")).json();
@@ -293,17 +309,17 @@ describe("freee の鍵の更新", () => {
     const v = new (Vault as any)({ storage: fakeStorage() }, {});
     await v.setTokens({ access: "old", refresh: "r1", expiresAt: Date.now() + 60_000 });
     freee = (m, u) => (u.pathname === "/public_api/token" ? { json: { access_token: "new", refresh_token: "r2", expires_in: 21600 } } : undefined);
-    const [a, b] = await Promise.all([v.accessToken("cid", "sec"), v.accessToken("cid", "sec")]);
+    const [a, b] = await Promise.all([v.accessToken("cid", "sec", "https://accounts.secure.freee.co.jp/public_api/token"), v.accessToken("cid", "sec", "https://accounts.secure.freee.co.jp/public_api/token")]);
     expect([a, b]).toEqual(["new", "new"]);
     expect(calls.length).toBe(1);
-    expect(await v.accessToken("cid", "sec")).toBe("new");
+    expect(await v.accessToken("cid", "sec", "https://accounts.secure.freee.co.jp/public_api/token")).toBe("new");
     expect(calls.length).toBe(1);
   });
   it("更新を断られ、今の鍵も切れていたら、ログインし直しにする", async () => {
     const v = new (Vault as any)({ storage: fakeStorage() }, {});
     await v.setTokens({ access: "old", refresh: "r1", expiresAt: Date.now() - 1000 });
     freee = () => ({ status: 401, json: {} });
-    expect(await v.accessToken("cid", "sec")).toBeNull();
-    expect(await v.accessToken("cid", "sec")).toBeNull();
+    expect(await v.accessToken("cid", "sec", "https://accounts.secure.freee.co.jp/public_api/token")).toBeNull();
+    expect(await v.accessToken("cid", "sec", "https://accounts.secure.freee.co.jp/public_api/token")).toBeNull();
   });
 });

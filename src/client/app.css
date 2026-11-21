@@ -1,0 +1,76 @@
+@import "tailwindcss";
+
+@font-face {
+  font-family: "Space Mono";
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/space-mono-latin-400-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Space Mono";
+  font-weight: 700;
+  font-display: swap;
+  src: url("/fonts/space-mono-latin-700-normal.woff2") format("woff2");
+}
+
+@theme {
+  --color-bg: #050505;
+  --color-card: #111111;
+  --color-line: #262626;
+  --color-fg: #f0f0f0;
+  --color-sub: #a0a0a0;
+  --color-mute: #7a7a7a;
+  --font-sans: "Noto Sans JP", "Hiragino Sans", "Yu Gothic", system-ui, sans-serif;
+  --font-mono: "Space Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-fg);
+  font-family: var(--font-sans);
+  -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+  color-scheme: dark;
+}
+button {
+  cursor: pointer;
+}
+:focus-visible {
+  outline: 2px solid #f0f0f0;
+  outline-offset: 2px;
+}
+input,
+select,
+textarea {
+  font-size: 16px; /* iPhone で拡大されないように */
+}
+.pt-safe {
+  padding-top: calc(env(safe-area-inset-top) + 12px);
+}
+.pb-safe {
+  padding-bottom: calc(env(safe-area-inset-bottom) + 12px);
+}
+.field {
+  width: 100%;
+  min-height: 44px;
+  border-radius: 12px;
+  border: 1px solid #333;
+  background: #0a0a0a;
+  color: var(--color-fg);
+  padding: 8px 12px;
+}
+.field::placeholder {
+  color: #666;
+}
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
+}

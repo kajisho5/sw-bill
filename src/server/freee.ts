@@ -11,11 +11,23 @@ export interface Env {
   COMPANY_ID: string;
   FREEE_CLIENT_ID: string;
   FREEE_CLIENT_SECRET: string;
-  SESSION_SECRET: string;
+  /** ふつうは入れない（自動で作って保存箱に置く）。入れた場合はこちらを使う。 */
+  SESSION_SECRET?: string;
   MCP_TOKEN?: string;
+  DEV_FAKE_FREEE?: string;
+  DEV_FREEE_BASE?: string;
 }
 
 export const vault = (env: Env) => env.VAULT.get(env.VAULT.idFromName("main"));
+
+/** ログインの印の署名用と、AI 用の入口の合言葉。 */
+export async function appSecrets(env: Env): Promise<{ session: string; mcp: string }> {
+  const fixedSession = env.SESSION_SECRET && env.SESSION_SECRET.length >= 32 ? env.SESSION_SECRET : null;
+  const fixedMcp = env.MCP_TOKEN && env.MCP_TOKEN.length >= 32 ? env.MCP_TOKEN : null;
+  if (fixedSession && fixedMcp) return { session: fixedSession, mcp: fixedMcp };
+  const s = await vault(env).secrets();
+  return { session: fixedSession ?? s.session, mcp: fixedMcp ?? s.mcp };
+}
 
 export class AppError extends Error {
   constructor(
@@ -28,8 +40,12 @@ export class AppError extends Error {
   }
 }
 
-const IV = "https://api.freee.co.jp/iv";
-const AC = "https://api.freee.co.jp";
+/** freee の通信先。手元の試験（DEV_FAKE_FREEE=1 かつ localhost）のときだけ、偽物の freee に向ける。 */
+export function endpoints(env: Env): { api: string; accounts: string } {
+  const fake = env.DEV_FAKE_FREEE === "1" && /^http:\/\/(localhost|127\.0\.0\.1):\d+$/.test(env.DEV_FREEE_BASE ?? "") ? env.DEV_FREEE_BASE! : null;
+  return { api: fake ?? "https://api.freee.co.jp", accounts: fake ?? "https://accounts.secure.freee.co.jp" };
+}
+export const tokenUrl = (env: Env) => `${endpoints(env).accounts}/public_api/token`;
 
 type J = Record<string, any>;
 
@@ -43,7 +59,7 @@ function freeeMessages(j: unknown): string {
 }
 
 async function call(env: Env, method: "GET" | "POST" | "PUT", url: string, body?: unknown): Promise<J> {
-  const token = await vault(env).accessToken(env.FREEE_CLIENT_ID, env.FREEE_CLIENT_SECRET);
+  const token = await vault(env).accessToken(env.FREEE_CLIENT_ID, env.FREEE_CLIENT_SECRET, tokenUrl(env));
   if (!token) throw new AppError(401, "relogin", "freee のログインが切れました。もう一度ログインしてください。");
   const tries = method === "GET" ? 3 : 1;
   let last: unknown;
@@ -95,7 +111,7 @@ async function listRaw(env: Env, kind: DocKind, from: string, to: string): Promi
     const j = await call(
       env,
       "GET",
-      `${IV}${FREEE_PATH[kind]}?${q({ company_id: cid(env), [`start_${DATE_PARAM[kind]}`]: from, [`end_${DATE_PARAM[kind]}`]: to, limit: 100, offset })}`,
+      `${endpoints(env).api}/iv${FREEE_PATH[kind]}?${q({ company_id: cid(env), [`start_${DATE_PARAM[kind]}`]: from, [`end_${DATE_PARAM[kind]}`]: to, limit: 100, offset })}`,
     );
     const page = Array.isArray(j[k.many]) ? (j[k.many] as J[]) : [];
     out.push(...page);
@@ -116,7 +132,7 @@ export async function listDocs(env: Env, kind: DocKind, month: string): Promise<
 }
 
 export async function getRaw(env: Env, kind: DocKind, id: number): Promise<J> {
-  const j = await call(env, "GET", `${IV}${FREEE_PATH[kind]}/${id}?${q({ company_id: cid(env) })}`);
+  const j = await call(env, "GET", `${endpoints(env).api}/iv${FREEE_PATH[kind]}/${id}?${q({ company_id: cid(env) })}`);
   const raw = j[FREEE_KEY[kind].one];
   if (!raw || typeof raw !== "object") throw new AppError(502, "freee_bad", "freee から読めない返事が来ました。");
   if (Number(raw.company_id) !== cid(env)) throw new AppError(403, "wrong_company", "別の事業所の書類です。");
@@ -126,7 +142,7 @@ export async function getRaw(env: Env, kind: DocKind, id: number): Promise<J> {
 export const getDoc = async (env: Env, kind: DocKind, id: number): Promise<Doc> => toDoc(kind, await getRaw(env, kind, id));
 
 export async function saveDoc(env: Env, kind: DocKind, body: J, editId: number | null): Promise<J> {
-  const url = `${IV}${FREEE_PATH[kind]}${editId ? `/${editId}` : ""}`;
+  const url = `${endpoints(env).api}/iv${FREEE_PATH[kind]}${editId ? `/${editId}` : ""}`;
   const j = await call(env, editId ? "PUT" : "POST", url, body);
   const raw = j[FREEE_KEY[kind].one];
   if (!raw?.id) throw new AppError(502, "freee_bad", "freee に保存しましたが、番号を受け取れませんでした。freee で確かめてください。");
@@ -136,7 +152,7 @@ export async function saveDoc(env: Env, kind: DocKind, body: J, editId: number |
 export async function searchPartners(env: Env, keyword: string): Promise<Partner[]> {
   const params: Record<string, string | number> = { company_id: cid(env), limit: 100 };
   if (keyword) params.keyword = keyword.slice(0, 50);
-  const j = await call(env, "GET", `${AC}/api/1/partners?${q(params)}`);
+  const j = await call(env, "GET", `${endpoints(env).api}/api/1/partners?${q(params)}`);
   return (Array.isArray(j.partners) ? (j.partners as J[]) : [])
     .filter((p) => p.available !== false)
     .map((p) => ({ id: Number(p.id), name: String(p.long_name || p.name || "") }))
@@ -144,7 +160,7 @@ export async function searchPartners(env: Env, keyword: string): Promise<Partner
 }
 
 export async function getPartner(env: Env, id: number): Promise<PartnerDetail> {
-  const j = await call(env, "GET", `${AC}/api/1/partners/${id}?${q({ company_id: cid(env) })}`);
+  const j = await call(env, "GET", `${endpoints(env).api}/api/1/partners/${id}?${q({ company_id: cid(env) })}`);
   if (!j.partner) throw new AppError(404, "not_found", "その取引先が freee にありません。");
   return toPartnerDetail(j.partner);
 }

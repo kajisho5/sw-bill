@@ -4,12 +4,14 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite build && wrangler dev",
+    "dev": "vite build && wrangler dev --port 8787 --ip 127.0.0.1 --local-upstream 127.0.0.1:8787",
     "build": "vite build",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "check": "npm run typecheck && npm test && npm run build",
-    "sample": "node scripts/sample.mjs"
+    "sample": "node scripts/sample.mjs",
+    "fake-freee": "node scripts/fake-freee.ts",
+    "e2e": "node scripts/e2e.mjs"
   },
   "dependencies": {
     "@cloudflare/puppeteer": "2.0.1",
@@ -29,6 +31,10 @@
     "typescript": "7.0.2",
     "vite": "8.3.8",
     "vitest": "5.1.1",
-    "wrangler": "4.166.0"
+    "wrangler": "4.166.0",
+    "puppeteer-core": "latest"
+  },
+  "engines": {
+    "node": ">=22.18"
   }
 }
