@@ -37,3 +37,10 @@ freee の請求書・見積書・納品書を SEVENTHWELL のデザインの PDF
 ## 公開
 
 main に反映すると `.github/workflows/deploy.yml` が `npm run check` を通してから公開する（鍵と DNS は kajisho5/tower の `projects/sw-bill.toml`）。バージョンは `package.json` の `version`（設定画面の下に出る）。
+
+## freee の仕様を調べるとき
+
+- freee 公式のスキル `freee-api-skill`（https://github.com/freee/freee-mcp の `skills/freee-api-skill/`）に、項目の一覧と使い方がある。記憶で書かずここを見る。
+- このツールが使うのは `recipes/invoice-operations.md`、`references/invoice-invoices.md`、`invoice-quotations.md`、`invoice-delivery-slips.md`、`accounting-partners.md`。
+- 2026-11-21 に freee-mcp v0.38.3 の内容と照合済み（作成時の必須項目、一覧の日付の絞り込み、取引先の `keyword` 検索、freee の画面の URL）。食い違いなし。
+- そのスキルにある「メモタグ freee-mcp を付ける」は freee-mcp 経由の作成の決まりで、このツールには当てはめない。
