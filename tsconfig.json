@@ -12,5 +12,5 @@
     "resolveJsonModule": true,
     "types": ["@cloudflare/workers-types", "vite/client"]
   },
-  "include": ["src", "test", "vite.config.ts"]
+  "include": ["src", "test", "scripts/bill.ts", "vite.config.ts", "vite.cli.config.ts"]
 }

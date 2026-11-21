@@ -8,10 +8,10 @@
     "build": "vite build",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "check": "npm run typecheck && npm test && npm run build",
-    "sample": "node scripts/sample.mjs",
+    "check": "npm run typecheck && npm test && npm run build && vite build -c vite.cli.config.ts --logLevel error",
     "fake-freee": "node scripts/fake-freee.ts",
-    "e2e": "node scripts/e2e.mjs"
+    "e2e": "node scripts/e2e.mjs",
+    "bill": "vite build -c vite.cli.config.ts --logLevel error && node dist/cli/bill.mjs"
   },
   "dependencies": {
     "@cloudflare/puppeteer": "2.0.1",

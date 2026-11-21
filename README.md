@@ -73,6 +73,15 @@ main に反映すると、GitHub Actions が検査を通してから Cloudflare 
 
 ログインの印の署名に使う合言葉と、AI 用の入口の合言葉は、初回に自動で作られてツールの保存箱に入ります（設定は要りません）。
 
+## AI がリポから直接使う（サイトなし）
+
+GitHub からこのリポを取ってくれば、サイトにログインしなくても PDF づくりと掛率の計算ができます。freee の読み書きは、使う AI（Muse など）が自分の freee 接続で行います。
+
+- `npm run bill -- pdf invoice 書類.json out` … freee の書類を SEVENTHWELL の紙面の PDF にする
+- `npm run bill -- body 依頼.json --company 事業所ID --preview out` … 掛率と金額を計算し、freee に保存する中身を出す
+
+AI 向けの手順と依頼の書き方は `AGENTS.md` にあります。
+
 ## AI から使う（MCP）
 
 設定画面の「AI から下書きを作る」で URL をコピーし、Claude や Muse のコネクタ（MCP）に登録します。
