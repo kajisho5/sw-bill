@@ -1,0 +1,5 @@
+# 手元で動かすときの見本。.dev.vars に写して値を入れる（.dev.vars はリポに入れない）。
+FREEE_CLIENT_ID=
+FREEE_CLIENT_SECRET=
+SESSION_SECRET=
+MCP_TOKEN=
