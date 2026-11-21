@@ -1,6 +1,6 @@
 # SW BILL
 
-freee の請求書・見積書・納品書を SEVENTHWELL のデザインの PDF にするツール。作成（掛率の自動計算）と、AI 用の入口（下書きまで）も持つ。非公開リポ。公開先は https://bill.seventh-well.com 。
+freee の請求書・見積書・納品書を SEVENTHWELL のデザインの PDF にするツール。作成（掛率の自動計算）と、AI 用の入口（下書きまで）も持つ。公開リポ（秘密の値・実在の取引先のデータは入れない）。公開先は https://bill.seventh-well.com 。
 
 ## コマンド（どれも動作確認済み）
 
