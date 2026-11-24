@@ -14,7 +14,7 @@ freee の請求書・見積書・納品書を SEVENTHWELL のデザインの PDF
 
 ## フォルダ
 
-- `src/shared/` … 画面とサーバーの両方で使う。`calc.ts`（掛率・金額・単位欄の書き方）、`convert.ts`（freee との変換・照合・入力チェック）、`render.ts`（紙面）
+- `src/shared/` … 画面とサーバーの両方で使う。`calc.ts`（掛率・金額・単位欄の書き方）、`convert.ts`（freee との変換・照合・入力チェック）、`render.ts`（紙面）、`equip.ts`（機材リストの紙面）
 - `src/server/` … `index.ts`（入口）、`freee.ts`（通信）、`vault.ts`（保存箱）、`pdf.ts`、`drafts.ts`、`mcp.ts`
 - `src/client/` … 画面（React）
 - `src/shared/glyphs.ts` … `scripts/make-glyphs.py` が作る。**手で直さない**（Goodtimes のフォント本体はリポに入れない）
@@ -65,6 +65,7 @@ freee の読み書きは、呼ぶ側の AI が自分の freee 接続（freee 公
 - 金額・消費税は freee の数字をそのまま出す。紙面で計算し直さない（`validateDoc` で照合し、合わなければ PDF を作らない）
 - 掛率・金額の計算は `src/shared/calc.ts` だけで行う。AI に計算させない
 - サイトから freee への書き込みは `/api/drafts/:id/commit` だけ。AI 用の入口（`mcp.ts`）に freee へ書き込む道具を足さない
+- 機材リストは freee に保存しない（保存箱だけ）。入力の形直しは `src/server/equip.ts`、紙面は `src/shared/equip.ts`。題字の EQUIPMENT LIST に要る P・M は `make-glyphs.py` の文字集合に入れてある
 - 外から来た文字（freee・画面・AI）は `render.ts` の `esc` を通して出す。入力は `drafts.ts` で形を直してから保存する
 - 秘密の値はコード・リポ・ログに入れない。Cloudflare の Secret は `FREEE_CLIENT_ID` と `FREEE_CLIENT_SECRET` だけ
 - テスト・見本のデータに実在の名前（取引先・会場・人・住所・口座・登録番号）を使わない。架空のものにする

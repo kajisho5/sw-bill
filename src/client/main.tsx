@@ -6,6 +6,7 @@ import { Btn, ErrorPanel, Loading, Ring, Wordmark } from "./components/ui";
 import { api, ApiError } from "./lib/api";
 import { go, useLocation } from "./lib/router";
 import { Editor, NewDraft } from "./screens/Editor";
+import { EquipEditor, EquipPreview, NewEquip } from "./screens/Equip";
 import { List } from "./screens/List";
 import { Preview } from "./screens/Preview";
 import { Settings } from "./screens/Settings";
@@ -71,6 +72,11 @@ function App() {
 
   const doc = path.match(/^\/d\/([a-z_]+)\/(\d+)$/);
   if (doc && DOC_KINDS.includes(doc[1] as DocKind)) return <Preview key={path} kind={doc[1] as DocKind} id={Number(doc[2])} />;
+  if (path === "/equip/new") return <NewEquip />;
+  const equipEdit = path.match(/^\/equip\/([A-Za-z0-9_-]+)\/edit$/);
+  if (equipEdit) return <EquipEditor key={equipEdit[1]} id={equipEdit[1]} />;
+  const equip = path.match(/^\/equip\/([A-Za-z0-9_-]+)$/);
+  if (equip) return <EquipPreview key={equip[1]} id={equip[1]} />;
   const edit = path.match(/^\/edit\/([A-Za-z0-9_-]+)$/);
   if (edit) return <Editor key={edit[1]} id={edit[1]} />;
   if (path === "/new") return <NewDraft kind={DOC_KINDS.includes(query.get("k") as DocKind) ? (query.get("k") as DocKind) : "quotation"} today={today} />;

@@ -13,11 +13,13 @@ https://claude.ai/artifact/Q1fy4kLJqU6V4uf7p8si28
 | [design/quotation-rate-a4.svg](design/quotation-rate-a4.svg) | 掛率の列が入った見積書 |
 | [design/app-screens.svg](design/app-screens.svg) | 操作画面（ログイン・一覧・プレビュー・まとめて書き出し） |
 | [design/create-screens.svg](design/create-screens.svg) | 作成画面（書類を作成・明細を追加・掛率の表） |
+| [design/equipment-a4.svg](design/equipment-a4.svg) | 機材リスト（A4・1ページ。実装の見本から書き出したもの） |
 
 ## 決めたこと
 
 - 作るのは「freee を読んで PDF を出す」＋「作成（掛率の自動計算）」＋「AI 用の入口（下書きまで）」
 - 対象は請求書・見積書・納品書の3種類。同じ型で、題・日付の項目・下の欄だけが変わる
+- 機材リスト（2026-11-24 追加）：freee には無い書類なので保存は保存箱だけ。紙面は同じ型を使い、題は EQUIPMENT LIST、宛先は発注元、右は日程、黒帯は会場名と機材の総数、表の列はコード・機材名・型番・仕様・数量・単位・備考・確認
 - 掛率は株式会社ハーツの表と同じ値から始める。freee には「数量 × 掛率」を数量に、「台・3日・掛率1.5」を単位欄に入れる
 - 金額と消費税は freee の数字を正とする
 - PDF は Cloudflare のサーバー側ブラウザで作る。紙面は1ページ1枚の SVG

@@ -146,3 +146,55 @@ export const KIND_LABEL: Record<DocKind, string> = {
   quotation: "見積書",
   delivery_slip: "納品書",
 };
+
+// ───────── 機材リスト（freee には無い、このツールだけの書類） ─────────
+
+export interface EquipItem {
+  /** 機材コード（発注書の番号など。無ければ空）。 */
+  code: string;
+  name: string;
+  /** 型番・仕様。 */
+  model: string;
+  /** 数量。数えられないもの（会場備品など）は null。 */
+  qty: number | null;
+  unit: string;
+  /** 備考（手配先・共用先など）。 */
+  note: string;
+}
+
+export interface EquipSection {
+  title: string;
+  items: EquipItem[];
+}
+
+export const EQUIP_VERSION = 1;
+
+export interface EquipDoc {
+  version: typeof EQUIP_VERSION;
+  id: string;
+  /** 案件番号（発注書の番号など。無ければ空）。 */
+  docNo: string;
+  /** 作成日（YYYY-MM-DD）。 */
+  created: string;
+  clientName: string;
+  /** 部署・担当者などの補足行。 */
+  clientLines: string[];
+  schedule: { label: string; value: string }[];
+  subject: string;
+  /** フッターに出す短い件名。 */
+  subjectShort: string;
+  place: string;
+  venueName: string;
+  venueSub: string;
+  /** 黒帯に出す英字（例：VENUE 01 — MAIN HALL）。 */
+  venueEn: string;
+  sections: EquipSection[];
+  updatedAt: string;
+  source: "app" | "ai";
+}
+
+/** 機材の総数（qty が入っている行だけ数える）。 */
+export const equipTotalQty = (d: EquipDoc): number =>
+  d.sections.reduce((a, s) => a + s.items.reduce((b, it) => b + (it.qty ?? 0), 0), 0);
+
+export const equipItemCount = (d: EquipDoc): number => d.sections.reduce((a, s) => a + s.items.length, 0);

@@ -261,7 +261,7 @@ describe("AI 用の入口", () => {
   });
   it("道具の一覧に「freee に保存」は無い", async () => {
     const j: any = await (await mcp("tools/list")).json();
-    expect(j.result.tools.map((t: any) => t.name)).toEqual(["search_partners", "list_price_items", "get_rate_table", "create_draft", "update_draft", "get_draft"]);
+    expect(j.result.tools.map((t: any) => t.name)).toEqual(["search_partners", "list_price_items", "get_rate_table", "create_draft", "update_draft", "get_draft", "create_equipment_list", "update_equipment_list", "get_equipment_list", "list_equipment_lists"]);
     const init: any = await (await mcp("initialize", { protocolVersion: "2025-03-26" })).json();
     expect(init.result.protocolVersion).toBe("2025-03-26");
   });
@@ -321,5 +321,82 @@ describe("freee の鍵の更新", () => {
     freee = () => ({ status: 401, json: {} });
     expect(await v.accessToken("cid", "sec", "https://accounts.secure.freee.co.jp/public_api/token")).toBeNull();
     expect(await v.accessToken("cid", "sec", "https://accounts.secure.freee.co.jp/public_api/token")).toBeNull();
+  });
+});
+
+describe("機材リスト", () => {
+  const mcpText = async (r: Response) => JSON.parse(((await r.json()) as any).result.content[0].text);
+  const body = {
+    clientName: "見本イベント合同会社",
+    clientLines: ["架空フェス2099運営事務局"],
+    subject: "架空フェス2099",
+    subjectShort: "架空フェス2099",
+    place: "サンプル展示場",
+    venueName: "第1会場",
+    venueSub: "メインホール",
+    sections: [{ title: "メイン機材", items: [{ code: "10023", name: "デジタルミキサー 32ch", model: "DM-3200", qty: 2, unit: "台", note: "" }] }],
+    unknownField: "捨てられるはず",
+  };
+
+  it("作る → 読む → 直す → 複製 → 消す。freee には触らない", async () => {
+    const created: any = await (await send("POST", "/api/equips", body)).json();
+    const id = created.equip.id;
+    expect(id).toBeTruthy();
+    expect(created.equip.unknownField).toBeUndefined();
+    expect(created.equip.sections[0].items[0]).toMatchObject({ name: "デジタルミキサー 32ch", qty: 2 });
+
+    const list: any = await (await get("/api/equips")).json();
+    expect(list.equips).toHaveLength(1);
+    expect(list.equips[0]).toMatchObject({ id, totalQty: 2, itemCount: 1, venueName: "第1会場" });
+
+    const one: any = await (await get(`/api/equips/${id}`)).json();
+    expect(one.pages).toBe(1);
+    expect(one.fileName).toContain("機材リスト_");
+    const html = await (await get(`/api/equips/${id}/html`)).text();
+    expect(html).toContain("<title>機材リスト");
+    expect(html).toContain("デジタルミキサー 32ch");
+
+    const updated: any = await (await send("PUT", `/api/equips/${id}`, { ...body, venueSub: "サブホール" })).json();
+    expect(updated.equip.venueSub).toBe("サブホール");
+    expect(updated.equip.id).toBe(id);
+
+    const copied: any = await (await send("POST", `/api/equips/${id}/copy`)).json();
+    expect(copied.equip.id).not.toBe(id);
+    expect(copied.equip.venueSub).toBe("サブホール");
+    const list2: any = await (await get("/api/equips")).json();
+    expect(list2.equips).toHaveLength(2);
+
+    await send("DELETE", `/api/equips/${id}`);
+    expect((await get(`/api/equips/${id}`)).status).toBe(404);
+    expect(calls.some((c) => c.url.includes("api.freee.co.jp"))).toBe(false);
+  });
+
+  it("ログインしていなければ入れない", async () => {
+    expect((await get("/api/equips", false)).status).toBe(401);
+  });
+
+  it("AI が作って、画面の一覧にも出る", async () => {
+    const out = await mcpText(
+      await mcp("tools/call", {
+        name: "create_equipment_list",
+        arguments: {
+          clientName: "見本イベント合同会社",
+          subject: "架空フェス2099",
+          venueName: "第2会場",
+          sections: [{ title: "音響機材", items: [{ name: "スピーカー", qty: 4, unit: "台" }] }],
+        },
+      }),
+    );
+    expect(out).toMatchObject({ total_qty: 4, venue: "第2会場" });
+    expect(out.open_url).toBe(`https://bill.example/equip/${out.id}`);
+    const list: any = await (await get("/api/equips")).json();
+    expect(list.equips[0]).toMatchObject({ id: out.id, source: "ai" });
+    const got = await mcpText(await mcp("tools/call", { name: "get_equipment_list", arguments: { id: out.id } }));
+    expect(got.sections[0].items[0]).toMatchObject({ name: "スピーカー", qty: 4 });
+  });
+
+  it("機材が無いリストは AI からは作れない", async () => {
+    const r: any = await (await mcp("tools/call", { name: "create_equipment_list", arguments: { sections: [] } })).json();
+    expect(r.result.isError).toBe(true);
   });
 });

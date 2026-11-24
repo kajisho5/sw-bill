@@ -3,10 +3,12 @@ import { Hono, type Context } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { draftTotals, isValidRateTable } from "../shared/calc";
 import { checkDraft, checkDraftForCommit, docToDraft, draftToDoc, draftToFreeeBody, toDoc, validateDoc } from "../shared/convert";
+import { equipFileName, equipPageCount, renderEquipHtml } from "../shared/equip";
 import { fileName, todayJst } from "../shared/format";
 import { pageCount, renderHtml } from "../shared/render";
-import { DOC_KINDS, type DocKind, type Draft } from "../shared/types";
+import { DOC_KINDS, equipItemCount, equipTotalQty, type DocKind, type Draft, type EquipDoc } from "../shared/types";
 import { sanitizeDraft, sanitizeItems } from "./drafts";
+import { sanitizeEquip } from "./equip";
 import { AppError, appSecrets, endpoints, tokenUrl, getDoc, getPartner, getRaw, issuerProfile, listDocs, saveDoc, searchPartners, vault, type Env } from "./freee";
 import { handleMcp } from "./mcp";
 import { htmlToPdf } from "./pdf";
@@ -277,6 +279,76 @@ app.post("/api/drafts/:id/commit", async (c) => {
   } finally {
     await v.endCommit(d.id, savedId);
   }
+});
+
+// 機材リスト（freee には無い、このツールだけの書類）
+const loadEquip = async (c: Ctx): Promise<EquipDoc> => {
+  const e = await vault(c.env).getEquip(c.req.param("id") ?? "");
+  if (!e) throw new AppError(404, "not_found", "その機材リストはありません。");
+  return e;
+};
+const equipSummary = (e: EquipDoc) => ({
+  id: e.id,
+  subject: e.subject,
+  subjectShort: e.subjectShort,
+  clientName: e.clientName,
+  venueName: e.venueName,
+  venueSub: e.venueSub,
+  place: e.place,
+  created: e.created,
+  totalQty: equipTotalQty(e),
+  itemCount: equipItemCount(e),
+  updatedAt: e.updatedAt,
+  source: e.source,
+});
+
+app.get("/api/equips", async (c) => c.json({ equips: (await vault(c.env).listEquips()).map(equipSummary) }));
+
+app.post("/api/equips", async (c) => {
+  const e = sanitizeEquip(await c.req.json().catch(() => ({})), null);
+  await vault(c.env).putEquip(e);
+  return c.json({ equip: e });
+});
+
+app.post("/api/equips/:id/copy", async (c) => {
+  const base = await loadEquip(c);
+  const e = sanitizeEquip(base, null);
+  await vault(c.env).putEquip(e);
+  return c.json({ equip: e });
+});
+
+app.get("/api/equips/:id", async (c) => {
+  const e = await loadEquip(c);
+  return c.json({ equip: e, pages: equipPageCount(e), fileName: equipFileName(e) });
+});
+
+app.put("/api/equips/:id", async (c) => {
+  const base = await loadEquip(c);
+  const e = sanitizeEquip(await c.req.json().catch(() => ({})), base);
+  await vault(c.env).putEquip(e);
+  return c.json({ equip: e, pages: equipPageCount(e), fileName: equipFileName(e) });
+});
+
+app.delete("/api/equips/:id", async (c) => {
+  await vault(c.env).deleteEquip(c.req.param("id"));
+  return c.json({ ok: true });
+});
+
+app.get("/api/equips/:id/html", async (c) => {
+  const e = await loadEquip(c);
+  return c.body(renderEquipHtml(e, `${new URL(c.req.url).origin}/fonts`), 200, htmlHeaders);
+});
+
+app.get("/api/equips/:id/pdf", async (c) => {
+  const e = await loadEquip(c);
+  const pdf = await htmlToPdf(c.env, renderEquipHtml(e, `${new URL(c.req.url).origin}/fonts`));
+  return new Response(pdf, {
+    headers: {
+      "content-type": "application/pdf",
+      "content-disposition": `attachment; filename="document.pdf"; filename*=UTF-8''${encodeURIComponent(equipFileName(e))}`,
+      "cache-control": "no-store",
+    },
+  });
 });
 
 app.all("/api/*", (c) => c.json({ error: "not_found", message: "その入口はありません。" }, 404));

@@ -21,10 +21,28 @@ interface DraftRow {
   freeeId: number | null;
 }
 
-const KINDS: [DocKind, string][] = [
+type ListKind = DocKind | "equip";
+
+interface EquipRow {
+  id: string;
+  subject: string;
+  subjectShort: string;
+  clientName: string;
+  venueName: string;
+  venueSub: string;
+  place: string;
+  created: string;
+  totalQty: number;
+  itemCount: number;
+  updatedAt: string;
+  source: "app" | "ai";
+}
+
+const KINDS: [ListKind, string][] = [
   ["invoice", "請求書"],
   ["quotation", "見積書"],
   ["delivery_slip", "納品書"],
+  ["equip", "機材リスト"],
 ];
 
 function shiftMonth(m: string, by: number): string {
@@ -39,12 +57,13 @@ function Pill({ on, children }: { on: boolean; children: string }) {
 
 export function List({ today }: { today: string }) {
   const { query } = useLocation();
-  const kind = (KINDS.find(([k]) => k === query.get("k"))?.[0] ?? "invoice") as DocKind;
+  const kind = (KINDS.find(([k]) => k === query.get("k"))?.[0] ?? "invoice") as ListKind;
   const month = /^\d{4}-\d{2}$/.test(query.get("m") ?? "") ? query.get("m")! : today.slice(0, 7);
   const filter = (["all", "unsent", "unsettled", "drafts"].includes(query.get("f") ?? "") ? query.get("f") : "all") as Filter;
 
   const [docs, setDocs] = useState<Summary[] | null>(null);
   const [drafts, setDrafts] = useState<DraftRow[] | null>(null);
+  const [equips, setEquips] = useState<EquipRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [picked, setPicked] = useState<Set<number>>(new Set());
   const [batch, setBatch] = useState<Summary[] | null>(null);
@@ -54,7 +73,12 @@ export function List({ today }: { today: string }) {
     let alive = true;
     setError(null);
     setPicked(new Set());
-    if (filter === "drafts") {
+    if (kind === "equip") {
+      setEquips(null);
+      api<{ equips: EquipRow[] }>("/api/equips")
+        .then((j) => alive && setEquips(j.equips))
+        .catch((e) => alive && setError(e.message));
+    } else if (filter === "drafts") {
       setDrafts(null);
       api<{ drafts: DraftRow[] }>("/api/drafts")
         .then((j) => alive && setDrafts(j.drafts))
@@ -111,10 +135,10 @@ export function List({ today }: { today: string }) {
       </header>
 
       <div className="px-4 pt-2">
-        <Segmented label="書類の種類" value={kind} options={KINDS} onChange={(k) => setQuery({ k, f: filter === "unsettled" && k === "quotation" ? null : query.get("f") })} />
+        <Segmented label="書類の種類" value={kind} options={KINDS} onChange={(k) => setQuery({ k, f: k === "equip" || (filter === "unsettled" && k === "quotation") ? null : query.get("f") })} />
       </div>
 
-      {filter !== "drafts" && (
+      {kind !== "equip" && filter !== "drafts" && (
         <div className="flex items-center gap-2 px-4 pt-5">
           <h1 className="flex-1 font-mono text-[34px] font-bold tracking-tight">{month.replace("-", ".")}</h1>
           <IconBtn label="前の月" onClick={() => setQuery({ m: shiftMonth(month, -1) })}>
@@ -129,13 +153,16 @@ export function List({ today }: { today: string }) {
           </IconBtn>
         </div>
       )}
-      {filter !== "drafts" && docs && (
+      {kind !== "equip" && filter !== "drafts" && docs && (
         <p className="px-4 pt-1 text-sm text-sub">
           {exportable.length}件　合計 <span className="font-mono font-bold text-fg">¥{yen(total)}</span>
         </p>
       )}
+      {kind === "equip" && equips && (
+        <p className="px-4 pt-5 text-sm text-sub">{equips.length}件の機材リスト</p>
+      )}
 
-      <div className="flex gap-2 overflow-x-auto px-4 py-4" role="tablist" aria-label="絞り込み">
+      {kind !== "equip" && (<div className="flex gap-2 overflow-x-auto px-4 py-4" role="tablist" aria-label="絞り込み">
         {filters.map(([f, label]) => (
           <button
             key={f}
@@ -148,11 +175,36 @@ export function List({ today }: { today: string }) {
             {label}
           </button>
         ))}
-      </div>
+      </div>)}
 
       <main className="flex-1 px-4 pb-44">
         {error ? (
           <ErrorPanel message={error} onRetry={() => setReload((n) => n + 1)} />
+        ) : kind === "equip" ? (
+          !equips ? (
+            <Loading />
+          ) : equips.length === 0 ? (
+            <Empty>機材リストはありません。右下の「＋ 作る」から作れます。</Empty>
+          ) : (
+            <ul className="space-y-2">
+              {equips.map((e) => (
+                <li key={e.id}>
+                  <button type="button" onClick={() => go(`/equip/${e.id}`)} className="w-full rounded-2xl border border-line bg-card p-4 text-left">
+                    <div className="flex items-baseline gap-3">
+                      <span className="flex-1 truncate text-[16px] font-bold">{[e.venueName, e.venueSub].filter(Boolean).join(" ") || e.subject || "（無題）"}</span>
+                      <span className="font-mono text-[16px] font-bold">{e.totalQty > 0 ? `${e.totalQty}点` : `${e.itemCount}件`}</span>
+                    </div>
+                    <p className="mt-1 truncate text-[13px] text-sub">{e.subject || "（件名なし）"}</p>
+                    <div className="mt-2 flex items-center gap-2">
+                      <Pill on={false}>機材リスト</Pill>
+                      {e.source === "ai" && <Pill on={false}>AIが作成</Pill>}
+                      <span className="flex-1 text-right font-mono text-[12px] text-mute">{e.created.replaceAll("-", ".")}</span>
+                    </div>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )
         ) : filter === "drafts" ? (
           !drafts ? (
             <Loading />
@@ -182,7 +234,7 @@ export function List({ today }: { today: string }) {
         ) : !docs ? (
           <Loading />
         ) : shown.length === 0 ? (
-          <Empty>{docs.length === 0 ? `この月の${KIND_LABEL[kind]}は freee にありません。` : "この条件に当てはまる書類はありません。"}</Empty>
+          <Empty>{docs.length === 0 ? `この月の${KIND_LABEL[kind as DocKind]}は freee にありません。` : "この条件に当てはまる書類はありません。"}</Empty>
         ) : (
           <ul className="space-y-2">
             {shown.map((d) => {
@@ -233,7 +285,11 @@ export function List({ today }: { today: string }) {
 
       <div className="pb-safe fixed inset-x-0 bottom-0 border-t border-line bg-[#0b0b0b]/95 px-4 pt-3 backdrop-blur">
         <div className="mx-auto flex max-w-xl gap-2">
-          {filter !== "drafts" && picked.size > 0 ? (
+          {kind === "equip" ? (
+            <Btn className="flex-1" onClick={() => go("/equip/new")} aria-label="新しい機材リストを作る">
+              ＋ 作る
+            </Btn>
+          ) : filter !== "drafts" && picked.size > 0 ? (
             <Btn className="flex-1" onClick={() => setBatch(exportable.filter((d) => picked.has(d.id)))}>
               選んだ {picked.size} 件を PDF にする
             </Btn>
@@ -242,13 +298,15 @@ export function List({ today }: { today: string }) {
               {filter === "drafts" ? "下書きは開いて保存します" : `表示中の ${exportable.length} 件をまとめて PDF`}
             </Btn>
           )}
-          <Btn onClick={() => go(`/new?k=${kind}`)} aria-label="新しい書類を作る">
-            ＋ 作る
-          </Btn>
+          {kind !== "equip" && (
+            <Btn onClick={() => go(`/new?k=${kind}`)} aria-label="新しい書類を作る">
+              ＋ 作る
+            </Btn>
+          )}
         </div>
       </div>
 
-      {batch && <Batch docs={batch} label={`${month.replace("-", ".")} ${KIND_LABEL[kind]}`} onClose={() => setBatch(null)} />}
+      {batch && <Batch docs={batch} label={`${month.replace("-", ".")} ${KIND_LABEL[kind as DocKind]}`} onClose={() => setBatch(null)} />}
     </div>
   );
 }

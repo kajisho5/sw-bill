@@ -1,4 +1,5 @@
 // テスト用のデータ。取引先・金額・住所・口座・登録番号はすべて架空。
+import type { EquipDoc } from "../src/shared/types";
 const base = {
   company_id: 1,
   template_id: 9,
@@ -95,3 +96,47 @@ export const mixedTax = {
   ),
 };
 mixedTax.total_amount -= 3369;
+
+export const equipSample: EquipDoc = {
+  version: 1,
+  id: "testequip1",
+  docNo: "2099120100000",
+  created: "2099-11-20",
+  clientName: "見本イベント合同会社",
+  clientLines: ["架空フェス2099運営事務局", "御担当　見本様"],
+  schedule: [
+    { label: "設営日", value: "2099年11月30日（月）09:00〜" },
+    { label: "使用日", value: "2099年12月1日（火）09:00 〜 12月4日（金）18:00" },
+    { label: "撤去日", value: "2099年12月4日（金）18:00" },
+  ],
+  subject: "架空フェス2099（見本学会・合同大会）",
+  subjectShort: "架空フェス2099",
+  place: "サンプル展示場",
+  venueName: "第1会場",
+  venueSub: "メインホール",
+  venueEn: "VENUE 01 — MAIN HALL",
+  sections: [
+    {
+      title: "メイン機材",
+      items: [
+        { code: "10023", name: "デジタルミキサー 32ch", model: "DM-3200", qty: 2, unit: "台", note: "手配先：見本音響" },
+        { code: "", name: "ワイヤレスマイク ハンド型", model: "WM-H900", qty: 8, unit: "本", note: "" },
+        { code: "", name: "会場備品（長机・椅子）", model: "", qty: null, unit: "式", note: "会場手配" },
+      ],
+    },
+    {
+      title: "収録機材",
+      items: [{ code: "", name: "ビデオカメラ 一式", model: "VC-X500", qty: 3, unit: "式", note: "" }],
+    },
+  ],
+  updatedAt: "2099-11-20T00:00:00.000Z",
+  source: "app",
+};
+
+const longSections: EquipDoc["sections"] = [];
+for (let s = 0; s < 3; s++) {
+  const items: EquipDoc["sections"][number]["items"] = [];
+  for (let i = 0; i < 25; i++) items.push({ code: `200${s}${String(i).padStart(2, "0")}`, name: `見本機材 ${s + 1}-${i + 1}`, model: `MD-${s}${i}`, qty: 1, unit: "台", note: "" });
+  longSections.push({ title: `グループ${s + 1}`, items });
+}
+export const equipLong: EquipDoc = { ...equipSample, id: "testequip2", sections: longSections };

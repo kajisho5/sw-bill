@@ -54,6 +54,36 @@ await step("freee に保存（連打）", async () => {
 });
 await step("複製して請求書に", async () => { await page.evaluate(() => window.scrollTo(0, 99999)); await clickText("請求書", "main button"); await page.waitForFunction(() => location.pathname.startsWith("/edit/")); await page.waitForSelector("fieldset"); await sleep(300); await shot(page, "9-copied"); });
 await step("下書きの一覧", async () => { await page.goto(B + "/?f=drafts"); await page.waitForSelector("main ul li"); await shot(page, "10-drafts"); });
+await step("機材リストを作る", async () => {
+  await page.goto(B + "/?k=equip");
+  await page.waitForFunction(() => document.body.innerText.includes("機材リストはありません") || document.querySelector("main ul li"));
+  await clickText("＋ 作る");
+  await page.waitForFunction(() => /\/equip\/[A-Za-z0-9_-]+\/edit$/.test(location.pathname));
+  await page.waitForSelector('input[aria-label="発注元"]');
+  await page.type('input[aria-label="発注元"]', "見本イベント合同会社");
+  await page.type('input[aria-label="件名"]', "架空フェス2099");
+  await page.type('input[aria-label="会場名"]', "第1会場");
+  await clickText("＋ グループを足す");
+  await page.type('input[aria-label="グループ1の見出し"]', "メイン機材");
+  await clickText("＋ 機材を足す");
+  await page.waitForSelector('[role="dialog"] input[aria-label="機材名"]');
+  await page.type('input[aria-label="機材名"]', "見本プロジェクター");
+  await page.type('input[aria-label="数量"]', "2");
+  const addBtn = await page.evaluateHandle(() => [...document.querySelectorAll('[role="dialog"] button')].find((e) => e.textContent.trim() === "足す"));
+  await addBtn.asElement().click();
+  await sleep(1200);
+  await shot(page, "15-equip-editor");
+});
+await step("機材リストのプレビューと一覧", async () => {
+  await clickText("プレビューを見る");
+  await page.waitForFunction(() => /\/equip\/[A-Za-z0-9_-]+$/.test(location.pathname));
+  await page.waitForSelector("iframe");
+  await sleep(1200);
+  await shot(page, "16-equip-preview");
+  await page.goto(B + "/?k=equip");
+  await page.waitForFunction(() => document.body.innerText.includes("第1会場"));
+  await shot(page, "17-equip-list");
+});
 await step("まとめて書き出し", async () => { await page.goto(B + "/?m=2099-12"); await page.waitForSelector("main ul li"); await clickText("件をまとめて PDF"); await sleep(1500); await shot(page, "11-batch"); await clickText("", 'button[aria-label="閉じる"]'); });
 await step("設定", async () => { await page.goto(B + "/settings"); await page.waitForSelector("table"); await clickText("＋ 品名を足す"); if (!(await page.$('input[aria-label="2件目の品名"]'))) { const n = (await page.$$('input[aria-label$="件目の品名"]')).length; await page.type(`input[aria-label="${n}件目の品名"]`, "見本プロジェクター" + n); const ps = await page.$$('input[aria-label="単価"]'); await ps.at(-1).type("30000"); } await clickText("単価表を保存"); await sleep(500); await shot(page, "12-settings"); });
 await step("横向き・広い画面", async () => { await page.setViewport({ width: 1280, height: 800 }); await page.goto(B + "/?m=2099-12"); await page.waitForSelector("main ul li"); await shot(page, "13-wide"); await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2, isMobile: true }); });

@@ -12,7 +12,7 @@ gs, cmap, hmtx = f.getGlyphSet(), f.getBestCmap(), f["hmtx"]
 cap = f["OS/2"].sCapHeight or 700
 out = ["// scripts/make-glyphs.py が作るファイル。手で直さない。", f"export const GT_CAP = {cap};",
        "export const GT: Record<string, { d: string; adv: number }> = {"]
-for ch in sorted(set("SEVENTHWELLINVOICEQUOTATIONDELIVERYBILL")):
+for ch in sorted(set("SEVENTHWELLINVOICEQUOTATIONDELIVERYBILLEQUIPMENTLIST")):
     g = cmap[ord(ch)]
     pen = SVGPathPen(gs, ntos=lambda v: str(int(round(v))))
     gs[g].draw(TransformPen(pen, (1, 0, 0, -1, 0, 0)))

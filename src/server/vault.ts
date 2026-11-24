@@ -2,7 +2,7 @@
 // freee の更新用の鍵は1回しか使えないので、更新はここで1本の列に並べる。
 import { DurableObject } from "cloudflare:workers";
 import { DEFAULT_RATES, isValidRateTable } from "../shared/calc";
-import type { Draft, PriceItem, RateTable } from "../shared/types";
+import type { Draft, EquipDoc, PriceItem, RateTable } from "../shared/types";
 
 export interface Tokens {
   access: string;
@@ -122,6 +122,26 @@ export class Vault extends DurableObject {
 
   async deleteDraft(id: string): Promise<void> {
     await this.ctx.storage.delete([`draft:${id}`, `commit:${id}`]);
+  }
+
+  /** 機材リスト。freee には保存しないので、下書きと違って残し続ける。 */
+  async listEquips(): Promise<EquipDoc[]> {
+    const m = await this.ctx.storage.list<EquipDoc>({ prefix: "equip:" });
+    return [...m.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  }
+
+  async getEquip(id: string): Promise<EquipDoc | null> {
+    return (await this.ctx.storage.get<EquipDoc>(`equip:${id}`)) ?? null;
+  }
+
+  async putEquip(d: EquipDoc): Promise<void> {
+    const count = (await this.ctx.storage.list({ prefix: "equip:", limit: 501 })).size;
+    if (count > 500 && !(await this.ctx.storage.get(`equip:${d.id}`))) throw new Error("機材リストが多すぎます（500件まで）。不要なものを消してください。");
+    await this.ctx.storage.put(`equip:${d.id}`, d);
+  }
+
+  async deleteEquip(id: string): Promise<void> {
+    await this.ctx.storage.delete(`equip:${id}`);
   }
 
   /** freee への保存を始めてよいか。同じ下書きの二重保存を防ぐ。 */

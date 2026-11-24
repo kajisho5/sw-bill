@@ -3,8 +3,9 @@ import { describe, expect, it } from "vitest";
 import { DEFAULT_RATES, decodeUnit, discountLine, draftTotals, encodeUnit, freeeQuantity, isValidRateTable, lineAmount, lookupRate, splitQuantity } from "../src/shared/calc";
 import { checkDraft, checkDraftForCommit, docToDraft, draftToDoc, draftToFreeeBody, toDoc, toSummary, validateDoc } from "../src/shared/convert";
 import { emWidth, fileName, monthRange, wrap } from "../src/shared/format";
+import { equipPageCount, renderEquipHtml, renderEquipPages } from "../src/shared/equip";
 import { pageCount, renderHtml, renderPages } from "../src/shared/render";
-import type { Draft, DraftLine } from "../src/shared/types";
+import { equipTotalQty, type Draft, type DraftLine } from "../src/shared/types";
 import * as fx from "./fixtures";
 
 const item = (o: Partial<Extract<DraftLine, { kind: "item" }>>): DraftLine => ({
@@ -145,6 +146,45 @@ describe("紙面", () => {
     mkdirSync(out, { recursive: true });
     const set: [string, string, any][] = [["invoice", "invoice", fx.invoice], ["quotation-rates", "quotation", fx.quotationWithRates], ["delivery", "delivery_slip", fx.deliverySlip], ["long", "invoice", fx.longInvoice], ["mixed", "invoice", fx.mixedTax]];
     for (const [name, kind, j] of set) writeFileSync(`${out}/${name}.html`, renderHtml(toDoc(kind as any, j), process.env.SAMPLE_FONTS ?? "/fonts"));
+    writeFileSync(`${out}/equip.html`, renderEquipHtml(fx.equipSample, process.env.SAMPLE_FONTS ?? "/fonts"));
+    writeFileSync(`${out}/equip-long.html`, renderEquipHtml(fx.equipLong, process.env.SAMPLE_FONTS ?? "/fonts"));
+  });
+});
+
+describe("機材リストの紙面", () => {
+  it("総数は数量のある行だけを数える", () => {
+    expect(equipTotalQty(fx.equipSample)).toBe(13);
+  });
+  it("1ページに収まる機材リストは1ページで、題字と総数が出る", () => {
+    const pages = renderEquipPages(fx.equipSample);
+    expect(pages).toHaveLength(1);
+    expect(pages[0]).toContain("機材リスト");
+    expect(pages[0]).toContain("translate(170.00,430)"); // 題字（EQUIPMENT LIST の輪郭）
+    expect(pages[0]).toContain("第1会場");
+    expect(pages[0]).toContain(">13</text>");
+    expect(equipPageCount(fx.equipSample)).toBe(1);
+  });
+  it("機材が多いと複数ページになり、見出しだけがページの最後に残らない", () => {
+    const pages = renderEquipPages(fx.equipLong);
+    expect(pages.length).toBeGreaterThanOrEqual(2);
+    expect(pages[0]).toContain("次のページへ続く");
+    expect(pages[1]).toContain("（続き）");
+    expect(pages[pages.length - 1]).toContain(`${pages.length} / ${pages.length}`);
+    // 各ページの最後の行が見出し（帯）だけになっていない：帯の直後に機材名が続くページ構成か、最終ページであること
+    for (let i = 0; i < pages.length - 1; i++) {
+      const lastGroup = Math.max(pages[i].lastIndexOf("グループ1"), pages[i].lastIndexOf("グループ2"), pages[i].lastIndexOf("グループ3"));
+      if (lastGroup >= 0) expect(pages[i].slice(lastGroup)).toContain("見本機材");
+    }
+  });
+  it("外から来た文字は無害化する", () => {
+    const html = renderEquipHtml({ ...fx.equipSample, subject: `<script>alert(1)</script>`, clientName: "<img src=x>" }, "https://example.invalid/fonts");
+    expect(html).not.toContain("<script>alert");
+    expect(html).not.toContain("<img");
+    expect(html).toContain("&lt;script&gt;");
+  });
+  it("数量が無いリストでも描ける（件数表示になる）", () => {
+    const d = { ...fx.equipSample, sections: [{ title: "備品", items: [{ code: "", name: "長机", model: "", qty: null, unit: "台", note: "" }] }] };
+    expect(renderEquipPages(d)[0]).toContain("件");
   });
 });
 

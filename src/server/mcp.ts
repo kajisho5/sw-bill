@@ -1,8 +1,9 @@
 // AI 用の入口（MCP）。Claude や Muse から「下書き」までを作れる。
 // freee への保存はここからはできない（画面でプレビューを見て、人が押す）。
 import { draftLineAmount, draftTotals } from "../shared/calc";
-import { KIND_LABEL, type Draft } from "../shared/types";
+import { equipItemCount, equipTotalQty, KIND_LABEL, type Draft, type EquipDoc } from "../shared/types";
 import { buildDraftFromAi } from "./drafts";
+import { buildEquipFromAi } from "./equip";
 import { AppError, getPartner, searchPartners, vault, type Env } from "./freee";
 
 type J = Record<string, any>;
@@ -33,6 +34,42 @@ const draftProps = {
   days: { type: "integer", description: "機材を使う日数の初期値（1以上）" },
   note: { type: "string", description: "備考。省略可" },
   lines: { type: "array", items: lineSchema, description: "明細。上から順に並べる" },
+};
+
+const equipItemSchema = {
+  type: "object",
+  properties: {
+    code: { type: "string", description: "機材コード（発注書の番号など）。無ければ省略" },
+    name: { type: "string", description: "機材名" },
+    model: { type: "string", description: "型番・仕様。無ければ省略" },
+    qty: { type: "number", description: "数量。数えられないもの（会場備品など）は入れない" },
+    unit: { type: "string", description: "単位（台・式・本など）" },
+    note: { type: "string", description: "備考（手配先・共用先など）。無ければ省略" },
+  },
+  required: ["name"],
+};
+
+const equipProps = {
+  docNo: { type: "string", description: "案件番号（発注書の番号など）。無ければ省略" },
+  created: { type: "string", description: "作成日（YYYY-MM-DD）。省略すると今日" },
+  clientName: { type: "string", description: "発注元（会社名）" },
+  clientLines: { type: "array", items: { type: "string" }, description: "発注元の補足行（部署・担当者など）。最大3行まで紙面に出る" },
+  schedule: {
+    type: "array",
+    items: { type: "object", properties: { label: { type: "string", description: "見出し（設営日・使用日・撤去日など）" }, value: { type: "string", description: "日時" } }, required: ["label", "value"] },
+    description: "日程。最大4行まで紙面に出る",
+  },
+  subject: { type: "string", description: "件名（催事名）" },
+  subjectShort: { type: "string", description: "フッターに出す短い件名。省略すると紙面では空欄" },
+  place: { type: "string", description: "場所（会場施設名）" },
+  venueName: { type: "string", description: "会場名（例：第1会場）" },
+  venueSub: { type: "string", description: "会場の補足（例：メインホール）" },
+  venueEn: { type: "string", description: "会場の英字表記（例：VENUE 01 — MAIN HALL）。省略可" },
+  sections: {
+    type: "array",
+    items: { type: "object", properties: { title: { type: "string", description: "グループの見出し（例：メイン機材）" }, items: { type: "array", items: equipItemSchema } }, required: ["title", "items"] },
+    description: "グループと機材。上から順に並べる",
+  },
 };
 
 const TOOLS = [
@@ -71,7 +108,31 @@ const TOOLS = [
     inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
     annotations: { readOnlyHint: true },
   },
+  {
+    name: "create_equipment_list",
+    description:
+      "機材リスト（会場ごとの機材一覧）を作る。freee には関係しない、このツールだけの書類。発注書などの内容を sections に分けて渡す。返ってきた open_url を利用者に伝える。",
+    inputSchema: { type: "object", properties: equipProps, required: ["sections"] },
+  },
+  {
+    name: "update_equipment_list",
+    description: "機材リストを作り直す。渡した内容で丸ごと入れ替わる。",
+    inputSchema: { type: "object", properties: { id: { type: "string", description: "機材リストの id" }, ...equipProps }, required: ["id"] },
+  },
+  {
+    name: "get_equipment_list",
+    description: "機材リストの中身を返す。",
+    inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
+    annotations: { readOnlyHint: true },
+  },
+  {
+    name: "list_equipment_lists",
+    description: "機材リストの一覧（新しい順）を返す。",
+    inputSchema: { type: "object", properties: {} },
+    annotations: { readOnlyHint: true },
+  },
 ];
+
 
 function describe(d: Draft, origin: string, warnings: string[] = []) {
   const t = draftTotals(d);
@@ -93,6 +154,23 @@ function describe(d: Draft, origin: string, warnings: string[] = []) {
     warnings,
     open_url: `${origin}/edit/${d.id}`,
     next_step: "利用者に open_url を伝え、画面でプレビューを確かめて「freee に保存」を押してもらう。",
+  };
+}
+
+function describeEquip(e: EquipDoc, origin: string, warnings: string[] = []) {
+  return {
+    id: e.id,
+    subject: e.subject,
+    venue: [e.venueName, e.venueSub].filter(Boolean).join(" ") || null,
+    client: e.clientName || null,
+    total_qty: equipTotalQty(e),
+    sections: e.sections.map((s) => ({
+      title: s.title,
+      items: s.items.map((it) => ({ code: it.code || null, name: it.name, model: it.model || null, qty: it.qty, unit: it.unit, note: it.note || null })),
+    })),
+    warnings,
+    open_url: `${origin}/equip/${e.id}`,
+    next_step: "利用者に open_url を伝え、画面で確かめて「PDF を作る」を押してもらう。",
   };
 }
 
@@ -128,6 +206,35 @@ async function callTool(env: Env, origin: string, name: string, args: J): Promis
       if (!d) throw new AppError(404, "not_found", "その下書きはありません。");
       return describe(d, origin);
     }
+    case "create_equipment_list":
+    case "update_equipment_list": {
+      let base: EquipDoc | null = null;
+      if (name === "update_equipment_list") {
+        base = await v.getEquip(String(args.id ?? ""));
+        if (!base) throw new AppError(404, "not_found", "その機材リストはありません。");
+      }
+      const built = buildEquipFromAi(args, base);
+      await v.putEquip(built.equip);
+      return describeEquip(built.equip, origin, built.warnings);
+    }
+    case "get_equipment_list": {
+      const e = await v.getEquip(String(args.id ?? ""));
+      if (!e) throw new AppError(404, "not_found", "その機材リストはありません。");
+      return describeEquip(e, origin);
+    }
+    case "list_equipment_lists":
+      return {
+        equipment_lists: (await v.listEquips()).map((e) => ({
+          id: e.id,
+          subject: e.subject,
+          venue: [e.venueName, e.venueSub].filter(Boolean).join(" ") || null,
+          client: e.clientName || null,
+          total_qty: equipTotalQty(e),
+          items: equipItemCount(e),
+          updated_at: e.updatedAt,
+          open_url: `${origin}/equip/${e.id}`,
+        })),
+      };
     default:
       throw new AppError(404, "unknown_tool", `知らない道具です：${name}`);
   }
@@ -148,7 +255,7 @@ async function handleOne(env: Env, origin: string, msg: J): Promise<J | null> {
         capabilities: { tools: {} },
         serverInfo: { name: "sw-bill", version: "0.1.0" },
         instructions:
-          "SEVENTHWELL の見積書・納品書・請求書の下書きを作る道具。掛率と金額はサーバーが計算する。単価は単価表から選び、無ければ利用者に聞く（推測しない）。freee への保存はできないので、できた下書きの open_url を利用者に伝える。",
+          "SEVENTHWELL の見積書・納品書・請求書の下書きと、機材リストを作る道具。掛率と金額はサーバーが計算する。単価は単価表から選び、無ければ利用者に聞く（推測しない）。freee への保存はできないので、できた下書きの open_url を利用者に伝える。機材リストは freee に関係しない書類で、作った open_url を利用者に伝える。",
       });
     case "ping":
       return reply({});
